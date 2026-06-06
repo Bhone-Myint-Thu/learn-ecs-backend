@@ -1,4 +1,4 @@
-name: Docker CI - Build And Push To ECR
+name: Docker CI - Build Push And Deploy To ECS
 
 on:
   push:
@@ -19,9 +19,14 @@ env:
   AWS_ROLE_NAME: github-actions-ecs-role
   IMAGE_TAG: ${{ github.sha }}
 
+  ECS_CLUSTER: ecs-demo
+  ECS_SERVICE: ecs-backend
+  ECS_TASK_DEFINITION_FAMILY: ecs-backend
+  ECS_CONTAINER_NAME: backend
+
 jobs:
-  docker-ci:
-    name: Docker Build And Push
+  docker-ci-cd:
+    name: Docker Build Push And ECS Deploy
     runs-on: ubuntu-latest
 
     steps:
@@ -67,11 +72,18 @@ jobs:
             -t ${{ steps.image.outputs.image_uri }} \
             .
 
-      - name: Dummy ECS Deploy Stage
-        run: |
-          echo "ECS deploy dummy stage only"
-          echo "Target Stage: ${{ steps.stage.outputs.target_stage }}"
-          echo "Image URI: ${{ steps.image.outputs.image_uri }}"
-          echo "Later ECS lesson will add:"
-          echo "aws ecs register-task-definition"
-          echo "aws ecs update-service"
+      - name: Render New ECS Task Definition
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition-family: ${{ env.ECS_TASK_DEFINITION_FAMILY }}
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.image_uri }}
+
+      - name: Deploy New Task Definition To ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
